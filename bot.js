@@ -21,27 +21,51 @@ client.on("clientReady", () => {
 
 client.on("messageCreate", async msg => {
   try {
-    // Ignore ONLY messages from THIS bot
-    if (msg.author.id === client.user.id) return;
+    // Ignore bot messages from THIS bot only
+    if (msg.author?.id === client.user.id) return;
 
     // Detect webhook messages
     const isWebhook = msg.webhookId !== null;
 
-    // You MUST FORWARD webhook messages, even if msg.author.bot = true
+    let extractedText = "";
+
+    // 1. If webhook AND no content → extract text from embed fields
     if (isWebhook) {
-      const text = msg.content || msg.embeds?.[0]?.description || "";
-      if (text) {
-        await axios.post(TARGET, { text });
-        console.log("Forwarded webhook message:", text.substring(0, 200));
+      if (msg.embeds.length > 0) {
+        const embed = msg.embeds[0];
+
+        // Description first (if exists)
+        if (embed.description) {
+          extractedText += embed.description + "\n";
+        }
+
+        // Then fields
+        if (embed.fields && embed.fields.length > 0) {
+          for (const field of embed.fields) {
+            extractedText += `${field.name}: ${field.value}\n`;
+          }
+        }
       }
+
+      // As fallback try normal content
+      if (!extractedText && msg.content) {
+        extractedText = msg.content;
+      }
+
+      if (extractedText.trim()) {
+        await axios.post(TARGET, { text: extractedText.trim() });
+        console.log("Forwarded webhook message:", extractedText.substring(0, 200));
+      } else {
+        console.log("Webhook message was empty — nothing forwarded.");
+      }
+
       return;
     }
 
-    // For user messages (optional)
-    const text = msg.content || "";
-    if (text) {
-      await axios.post(TARGET, { text });
-      console.log("Forwarded user message:", text.substring(0, 200));
+    // 2. Normal user message fallback
+    if (msg.content) {
+      await axios.post(TARGET, { text: msg.content });
+      console.log("Forwarded user message:", msg.content.substring(0, 200));
     }
 
   } catch (err) {
