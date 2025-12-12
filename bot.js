@@ -10,37 +10,39 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent
   ],
-  partials: [Partials.Channel] // Needed for webhook messages
+  partials: [Partials.Channel, Partials.Message]
 });
 
 const TARGET = process.env.RAILWAY_URL;
 
-client.on("ready", () => {
+client.on("clientReady", () => {
   console.log(`Bot ready as ${client.user.tag}`);
 });
 
 client.on("messageCreate", async msg => {
   try {
-    // Ignore messages from THIS bot (prevents loops)
-    if (msg.author.bot && msg.author.id === client.user.id) return;
+    // Ignore ONLY messages from THIS bot
+    if (msg.author.id === client.user.id) return;
 
-    // Accept webhook messages (msg.webhookId != null)
-    const isWebhookMessage = !!msg.webhookId;
+    // Detect webhook messages
+    const isWebhook = msg.webhookId !== null;
 
-    // Only process:
-    // - Webhook messages
-    // - Normal user messages (but ONLY if needed)
-    if (!isWebhookMessage && msg.author.bot) return;
+    // You MUST FORWARD webhook messages, even if msg.author.bot = true
+    if (isWebhook) {
+      const text = msg.content || msg.embeds?.[0]?.description || "";
+      if (text) {
+        await axios.post(TARGET, { text });
+        console.log("Forwarded webhook message:", text.substring(0, 200));
+      }
+      return;
+    }
 
+    // For user messages (optional)
     const text = msg.content || "";
-    if (!text || !TARGET) return;
-
-    await axios.post(TARGET, { text });
-
-    console.log(
-      `Forwarded${isWebhookMessage ? " webhook" : ""} message:`,
-      text.substring(0, 80)
-    );
+    if (text) {
+      await axios.post(TARGET, { text });
+      console.log("Forwarded user message:", text.substring(0, 200));
+    }
 
   } catch (err) {
     console.error("Forward error:", err.message);
