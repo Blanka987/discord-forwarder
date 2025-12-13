@@ -4,55 +4,68 @@ import { Client, GatewayIntentBits } from 'discord.js';
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
   ]
 });
 
-const REPORT_CHANNEL_ID = process.env.REPORT_CHANNEL_ID;
+// ===== KONFIG =====
+const DONATION_CHANNEL_ID = '1447999167312953536';
 const RAILWAY_URL = process.env.RAILWAY_URL;
 const API_SECRET = process.env.API_SECRET;
+const SITTING_BILL_ID = client.user?.id;
+// ==================
 
-client.once('clientReady', async () => {
-  console.log(`🤖 Bot ready as ${client.user.tag}`);
+async function syncMembers(guild) {
+  await guild.members.fetch();
 
-  try {
-    const channel = await client.channels.fetch(REPORT_CHANNEL_ID);
-    const guild = channel.guild;
-
-    // Ladda alla guild members (krävs)
-    await guild.members.fetch();
-
-    // 🔑 VIKTIGT: endast members som SER kanalen
-    const membersWithAccess = guild.members.cache.filter(m => {
-      if (m.user.bot) return false; // ❌ bort med bots
-      return channel.permissionsFor(m)?.has('ViewChannel');
-    });
-
-    const members = membersWithAccess.map(m => ({
+  const members = guild.members.cache
+    .filter(m => !m.user.bot)
+    .map(m => ({
       id: m.user.id,
       name: m.displayName || m.user.username
     }));
 
-    console.log(`👥 Found ${members.length} real members with access`);
+  await fetch(`${RAILWAY_URL}/api/sync-members`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-secret': API_SECRET
+    },
+    body: JSON.stringify({ members })
+  });
 
-    const res = await fetch(`${RAILWAY_URL}/api/sync-members`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-secret': API_SECRET
-      },
-      body: JSON.stringify({ members })
-    });
+  console.log(`👥 Synced ${members.length} members`);
+}
 
-    if (!res.ok) {
-      console.error('❌ Sync failed:', res.status);
-    } else {
-      console.log(`✅ Synced ${members.length} members to Railway`);
-    }
+client.once('clientReady', async () => {
+  console.log(`🤖 Bot ready as ${client.user.tag}`);
+  const guild = client.guilds.cache.first();
+  if (guild) await syncMembers(guild);
+});
 
-  } catch (err) {
-    console.error('❌ Member sync failed:', err);
-  }
+// 🔄 Ny medlem
+client.on('guildMemberAdd', async member => {
+  await syncMembers(member.guild);
+});
+
+// 📦 Donationer
+client.on('messageCreate', async message => {
+  if (message.channel.id !== DONATION_CHANNEL_ID) return;
+  if (message.author.bot) return;
+
+  await fetch(`${RAILWAY_URL}/api/new-donation`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-secret': API_SECRET
+    },
+    body: JSON.stringify({
+      content: message.content,
+      timestamp: message.createdAt.toISOString()
+    })
+  });
 });
 
 client.login(process.env.DISCORD_BOT_TOKEN);
