@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fetch from 'node-fetch';
 import { Client, GatewayIntentBits } from 'discord.js';
 
 const client = new Client({
@@ -18,11 +19,12 @@ client.once('clientReady', async () => {
   console.log(`🤖 Bot ready as ${client.user.tag}`);
 
   try {
-    // Hämta kanal & guild
+    // Vänta lite så Discord är helt redo
+    await new Promise(r => setTimeout(r, 3000));
+
     const channel = await client.channels.fetch(OUTPUT_CHANNEL_ID);
     const guild = channel.guild;
 
-    // Ladda ALLA medlemmar
     await guild.members.fetch();
 
     const members = guild.members.cache.map(m => ({
@@ -30,7 +32,6 @@ client.once('clientReady', async () => {
       name: m.displayName || m.user.username
     }));
 
-    // Skicka till Railway
     const res = await fetch(`${RAILWAY_URL}/api/sync-members`, {
       method: 'POST',
       headers: {
@@ -47,7 +48,7 @@ client.once('clientReady', async () => {
     }
 
   } catch (err) {
-    console.error('❌ Member sync failed:', err.message);
+    console.error('❌ Member sync failed:', err);
   }
 });
 
