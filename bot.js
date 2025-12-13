@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits } from 'discord.js';
-import fetch from 'node-fetch';
 
 const client = new Client({
   intents: [
@@ -11,13 +10,14 @@ const client = new Client({
   ]
 });
 
-// ===== KONFIG =====
-const REPORT_CHANNEL_ID = process.env.REPORT_CHANNEL_ID;
-const DONATION_CHANNEL_ID = process.env.WEBHOOK_CHANNEL_ID;
 const RAILWAY_URL = process.env.RAILWAY_URL;
 const API_SECRET = process.env.API_SECRET;
-// ==================
 
+const MATERIALS_CHANNEL_ID = '1447999167312953536';
+
+/**
+ * Skicka alla medlemmar till Railway
+ */
 async function syncMembers(guild) {
   await guild.members.fetch();
 
@@ -34,36 +34,39 @@ async function syncMembers(guild) {
     },
     body: JSON.stringify({ members })
   });
-
-  console.log(`👥 Synced ${members.length} members`);
 }
 
-// 🔹 BOT READY
 client.once('clientReady', async () => {
   console.log(`🤖 Bot ready as ${client.user.tag}`);
 
-  const channel = await client.channels.fetch(REPORT_CHANNEL_ID);
-  await syncMembers(channel.guild);
+  const guild = client.guilds.cache.first();
+  await syncMembers(guild);
 });
 
-// 🔹 NY MEDLEM GÅR MED I SERVERN
-client.on('guildMemberAdd', async (member) => {
-  console.log(`➕ New guild member: ${member.user.tag}`);
+/**
+ * 👤 Medlem går med
+ */
+client.on('guildMemberAdd', async member => {
   await syncMembers(member.guild);
 });
 
-// 🔹 ROLLER ÄNDRAS (kanal-access)
-client.on('guildMemberUpdate', async (oldMember, newMember) => {
-  if (oldMember.roles.cache.size !== newMember.roles.cache.size) {
-    console.log(`🔁 Roles updated for ${newMember.user.tag}`);
-    await syncMembers(newMember.guild);
-  }
+/**
+ * 👤 Medlem lämnar
+ */
+client.on('guildMemberRemove', async member => {
+  await syncMembers(member.guild);
 });
 
-// 🔹 DONATION TRIGGER
-client.on('messageCreate', async (message) => {
+/**
+ * 💰 Donation via meddelande i materials-kanalen
+ * (format kan justeras senare)
+ */
+client.on('messageCreate', async message => {
+  if (message.channelId !== MATERIALS_CHANNEL_ID) return;
   if (message.author.bot) return;
-  if (message.channel.id !== DONATION_CHANNEL_ID) return;
+
+  const amount = parseInt(message.content, 10);
+  if (isNaN(amount)) return;
 
   await fetch(`${RAILWAY_URL}/api/donation`, {
     method: 'POST',
@@ -73,11 +76,9 @@ client.on('messageCreate', async (message) => {
     },
     body: JSON.stringify({
       userId: message.author.id,
-      content: message.content
+      amount
     })
   });
-
-  console.log(`💾 Donation received from ${message.author.tag}`);
 });
 
 client.login(process.env.DISCORD_BOT_TOKEN);
