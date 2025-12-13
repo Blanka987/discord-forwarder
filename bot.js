@@ -1,3 +1,4 @@
+// bot.js
 import 'dotenv/config';
 import { Client, GatewayIntentBits } from 'discord.js';
 import axios from 'axios';
@@ -5,44 +6,31 @@ import axios from 'axios';
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMembers // VIKTIG
   ]
 });
 
-const WEBHOOK_CHANNEL_ID = process.env.WEBHOOK_CHANNEL_ID;
-const REPORT_CHANNEL_ID = process.env.REPORT_CHANNEL_ID;
-const RAILWAY_URL = process.env.RAILWAY_URL;
+const REPORT_CHANNEL_ID = '1448634638347145360';
+const RAILWAY_SYNC_URL = `${process.env.RAILWAY_URL}/api/sync-members`;
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`Bot ready as ${client.user.tag}`);
-});
-
-client.on('messageCreate', async (message) => {
-  // Only listen to webhook channel
-  if (message.channel.id !== WEBHOOK_CHANNEL_ID) return;
-
-  // Ignore itself
-  if (message.author?.bot && message.author.id === client.user.id) return;
-
-  let payload = null;
-
-  // Prefer embed text
-  if (message.embeds.length > 0) {
-    payload = {
-      embeds: message.embeds.map(e => e.toJSON())
-    };
-  } else {
-    payload = {
-      text: message.content
-    };
-  }
 
   try {
-    await axios.post(RAILWAY_URL, payload);
-    console.log("✓ Sent webhook payload to Railway");
+    const channel = await client.channels.fetch(REPORT_CHANNEL_ID);
+    const guild = channel.guild;
+
+    await guild.members.fetch();
+
+    const members = guild.members.cache.map(m => ({
+      id: m.user.id,
+      name: m.user.username
+    }));
+
+    await axios.post(RAILWAY_SYNC_URL, { members });
+    console.log(`✅ Synced ${members.length} members to Railway`);
   } catch (err) {
-    console.error("✗ Failed sending to Railway:", err.message);
+    console.error('❌ Member sync failed:', err.message);
   }
 });
 
